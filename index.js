@@ -72,13 +72,29 @@ app.post("/participants", async (req, res) => {
 })
 
 //  /messages
-app.get("/messages", async (req, res) => {
+app.get("/messages/", async (req, res) => {
   try {
     await client.connect()
     const db = client.db("projeto12")
-    const messages = await db.collection("messages").find({}).toArray()
 
-    res.send(messages)
+    const messages = await db.collection("messages").find({}).toArray()
+    const newMessages = []
+
+    // get limit of messages
+    let { limit } = req.query
+    if (!limit) {
+      limit = messages.length
+    }
+
+    // filter messages
+    const { user } = req.headers
+    messages.forEach((message) => {
+      if (message.type !== "private_message" || message.to === user || message.from === user) {
+        newMessages.push(message)
+      }
+    })
+
+    res.send(newMessages.slice(-parseInt(limit)))
   } catch (e) {
     res.sendStatus(500)
   } finally {
@@ -87,7 +103,45 @@ app.get("/messages", async (req, res) => {
 })
 
 app.post("/messages", async (req, res) => {
-  res.send("OK")
+  try {
+    await client.connect()
+    const db = client.db("projeto12")
+
+    // get user data from body and headers
+    const { to, text, type } = req.body
+    const { user } = req.headers
+
+    // validate if "user" is in "participants" array
+    const participants = await db.collection("participants").find({}).toArray()
+    const participant = participants.filter((p) => p.name === user)
+
+    // validate data
+    if (
+      !to ||
+      !text ||
+      (type !== "message" && type !== "private_message") ||
+      participant.length === 0
+    ) {
+      res.sendStatus(422)
+      return
+    }
+
+    // push new message to array in MongoDB
+    const time = dayjs().format("HH:mm:ss")
+    await db.collection("messages").insertOne({
+      from: user,
+      to,
+      text,
+      type,
+      time,
+    })
+
+    res.sendStatus(201)
+  } catch (e) {
+    res.sendStatus(500)
+  } finally {
+    client.close()
+  }
 })
 
 //  /status
