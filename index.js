@@ -2,7 +2,7 @@ import express from "express"
 import cors from "cors"
 import chalk from "chalk"
 import dayjs from "dayjs"
-import { MongoClient } from "mongodb"
+import { MongoClient, ObjectId } from "mongodb"
 import dotenv from "dotenv"
 import joi from "joi"
 import { stripHtml } from "string-strip-html"
@@ -142,6 +142,32 @@ app.post("/messages", async (req, res) => {
     })
 
     res.sendStatus(201)
+  } catch (e) {
+    res.sendStatus(500)
+  }
+})
+
+app.delete("/messages/:ID_DA_MENSAGEM", async (req, res) => {
+  const { user } = req.headers
+  const id = req.params.ID_DA_MENSAGEM
+
+  try {
+    const message = await db.collection("messages").findOne({ _id: new ObjectId(id) })
+
+    // validate if message exists
+    if (!message) {
+      res.sendStatus(404)
+      return
+    }
+
+    // validate if message owner is the user
+    if (message.from !== user) {
+      res.sendStatus(401)
+      return
+    }
+
+    await db.collection("messages").deleteOne(message)
+    res.sendStatus(200)
   } catch (e) {
     res.sendStatus(500)
   }
