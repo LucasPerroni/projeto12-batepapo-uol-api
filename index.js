@@ -123,7 +123,7 @@ app.post("/messages", async (req, res) => {
     const messageSchema = joi.object({
       to: joi.string().required(),
       text: joi.string().required(),
-      type: joi.string().required(),
+      type: joi.string().valid("message", "private_message").required(),
     })
     const validation = messageSchema.validate(req.body, { abortEarly: false })
     if (validation.error) {
@@ -193,6 +193,46 @@ app.post("/status", async (req, res) => {
     res.sendStatus(200)
   } catch (e) {
     res.status(500).send(e)
+  }
+})
+
+app.put("/messages/:ID_DA_MENSAGEM", async (req, res) => {
+  const messageSchema = joi.object({
+    to: joi.string().required(),
+    text: joi.string().required(),
+    type: joi.string().valid("message", "private_message").required(),
+  })
+  const validation = messageSchema.validate(req.body, { abortEarly: false })
+  if (validation.error) {
+    res.status(422).send(validation.error.details.map((e) => e.message))
+    return
+  }
+
+  const { user } = req.headers
+  const { to, text, type } = req.body
+  const id = req.params.ID_DA_MENSAGEM
+
+  try {
+    const participant = await db.collection("participants").findOne({ name: user })
+    if (!participant) {
+      res.status(422).send("user isn't active")
+      return
+    }
+
+    const message = await db.collection("messages").findOne({ _id: new ObjectId(id) })
+    if (!message) {
+      res.sendStatus(404)
+      return
+    }
+    if (message.from !== user) {
+      res.sendStatus(401)
+      return
+    }
+
+    await db.collection("messages").updateOne(message, { $set: req.body })
+    res.sendStatus(200)
+  } catch (e) {
+    res.sendStatus(500)
   }
 })
 
