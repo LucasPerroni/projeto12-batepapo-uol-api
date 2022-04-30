@@ -10,15 +10,21 @@ const app = express()
 app.use(express.json())
 app.use(cors())
 
-const client = new MongoClient(process.env.MONGO_URL)
+let db
+const client = new MongoClient(process.env.MONGO_URI)
+const promisse = client.connect()
+promisse.then(() => {
+  db = client.db(process.env.MONGO_DB)
+  setInterval(updateParticipants, 15000)
+})
+promisse.catch((e) => {
+  console.log(chalk.bold.redBright(`Error in client.connect:`, e))
+})
 
 //  /participants
 app.get("/participants", async (req, res) => {
   try {
-    await client.connect()
-    const db = client.db(process.env.MONGO_DB)
     const participants = await db.collection("participants").find({}).toArray()
-
     res.send(participants)
   } catch (e) {
     res.sendStatus(500)
@@ -27,9 +33,6 @@ app.get("/participants", async (req, res) => {
 
 app.post("/participants", async (req, res) => {
   try {
-    await client.connect()
-    const db = client.db(process.env.MONGO_DB)
-
     const { name } = req.body
     const nameExistent = await db.collection("participants").find({ name: name }).toArray()
 
@@ -64,17 +67,12 @@ app.post("/participants", async (req, res) => {
     res.sendStatus(201)
   } catch (e) {
     res.sendStatus(500)
-  } finally {
-    client.close()
   }
 })
 
 //  /messages
 app.get("/messages/", async (req, res) => {
   try {
-    await client.connect()
-    const db = client.db(process.env.MONGO_DB)
-
     const messages = await db.collection("messages").find({}).toArray()
     const newMessages = []
 
@@ -94,16 +92,12 @@ app.get("/messages/", async (req, res) => {
 
     res.send(newMessages.slice(-parseInt(limit)))
   } catch (e) {
-    console.log("deu ruim no get message")
     res.sendStatus(500)
   }
 })
 
 app.post("/messages", async (req, res) => {
   try {
-    await client.connect()
-    const db = client.db(process.env.MONGO_DB)
-
     // get user data from body and headers
     const { to, text, type } = req.body
     const { user } = req.headers
@@ -136,16 +130,12 @@ app.post("/messages", async (req, res) => {
     res.sendStatus(201)
   } catch (e) {
     res.sendStatus(500)
-  } finally {
-    client.close()
   }
 })
 
 //  /status
 app.post("/status", async (req, res) => {
   try {
-    await client.connect()
-    const db = client.db(process.env.MONGO_DB)
     const { user } = req.headers
 
     // validate if participant is active
@@ -162,10 +152,7 @@ app.post("/status", async (req, res) => {
 
     res.sendStatus(200)
   } catch (e) {
-    // console.log(e)
     res.status(500).send(e)
-  } finally {
-    client.close()
   }
 })
 
@@ -173,3 +160,28 @@ app.post("/status", async (req, res) => {
 app.listen(5000, () => {
   console.log(chalk.bold.greenBright("Express running"))
 })
+
+async function updateParticipants() {
+  try {
+    const participants = await db.collection("participants").find({}).toArray()
+
+    const now = Date.now()
+    const time = dayjs().format("HH:mm:ss")
+
+    participants.forEach(async (p) => {
+      // validate if participant were active in the last 10 seconds
+      if (p.lastStatus < now - 10000) {
+        await db.collection("participants").deleteOne({ name: p.name })
+        await db.collection("messages").insertOne({
+          from: p.name,
+          to: "Todos",
+          text: "sai da sala...",
+          type: "status",
+          time,
+        })
+      }
+    })
+  } catch (e) {
+    console.log(chalk.bold.redBright("Error to update participants", e))
+  }
+}
