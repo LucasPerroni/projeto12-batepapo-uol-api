@@ -5,12 +5,15 @@ import dayjs from "dayjs"
 import { MongoClient } from "mongodb"
 import dotenv from "dotenv"
 import joi from "joi"
+import { stripHtml } from "string-strip-html"
 
 dotenv.config()
+
 const app = express()
 app.use(express.json())
 app.use(cors())
 
+// connect to MongoDB and get database
 let db
 const client = new MongoClient(process.env.MONGO_URI)
 const promisse = client.connect()
@@ -53,23 +56,25 @@ app.post("/participants", async (req, res) => {
       return
     }
 
+    const sanitizedName = stripHtml(name.trim()).result
+
     // push new user to "participants" array
     await db.collection("participants").insertOne({
-      name,
+      name: sanitizedName,
       lastStatus: Date.now(),
     })
 
     // push new user to "messages" array
     const time = dayjs().format("HH:mm:ss")
     await db.collection("messages").insertOne({
-      from: name,
+      from: sanitizedName,
       to: "Todos",
       text: "entra na sala...",
       type: "status",
       time,
     })
 
-    res.sendStatus(201)
+    res.status(201).send({ name: sanitizedName })
   } catch (e) {
     res.sendStatus(500)
   }
@@ -129,10 +134,10 @@ app.post("/messages", async (req, res) => {
     // push new message to array in MongoDB
     const time = dayjs().format("HH:mm:ss")
     await db.collection("messages").insertOne({
-      from: user,
-      to,
-      text,
-      type,
+      from: stripHtml(user.trim()).result,
+      to: stripHtml(to.trim()).result,
+      text: stripHtml(text.trim()).result,
+      type: stripHtml(type.trim()).result,
       time,
     })
 
@@ -178,7 +183,7 @@ async function updateParticipants() {
     const time = dayjs().format("HH:mm:ss")
 
     participants.forEach(async (p) => {
-      // validate if participant were active in the last 10 seconds
+      // validate if participant was active in the last 10 seconds
       if (p.lastStatus < now - 10000) {
         await db.collection("participants").deleteOne({ name: p.name })
         await db.collection("messages").insertOne({
